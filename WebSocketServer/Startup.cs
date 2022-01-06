@@ -12,6 +12,7 @@ using System.Net.WebSockets;
 using Microsoft.AspNetCore.Http;
 using System.Threading;
 using WebSocketServer.Middleware;
+using WebSocketServer.Messengers;
 
 namespace WebSocketServer
 {
@@ -20,6 +21,7 @@ namespace WebSocketServer
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddWebSocketManager();
+            services.AddScoped<ConnectionMessenger>();
         }
 
         public void Configure(IApplicationBuilder app)

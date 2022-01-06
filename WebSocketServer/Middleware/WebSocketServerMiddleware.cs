@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using WebSocketServer.GameManager;
+using WebSocketServer.Messengers;
 
 namespace WebSocketServer.Middleware
 {
@@ -17,29 +18,33 @@ namespace WebSocketServer.Middleware
         private readonly RequestDelegate _next;
 
         private readonly WebSocketServerConnectionManager _manager;
+
         public WebSocketServerMiddleware(RequestDelegate next,WebSocketServerConnectionManager manager)
+            
         {
             _next = next;
             _manager = manager;
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        public async Task InvokeAsync(HttpContext context, ConnectionMessenger _connectionMessenger)
         {
             if (context.WebSockets.IsWebSocketRequest)
             {
                 WebSocket websocket = await context.WebSockets.AcceptWebSocketAsync();
-                Console.WriteLine("Websocket connected");
+                _connectionMessenger.Log();
                 string connId = _manager.AddSocket(websocket);
 
-                await SendGameState(websocket,connId);
+                await _connectionMessenger.SendMessageAsync(websocket);
+                //await SendGameState(websocket,connId);
 
                 await ReceiveMessage(websocket, async (result, buffer) =>
                 {
                     if (result.MessageType == WebSocketMessageType.Text)
-                    {
+                    { 
                         Console.WriteLine("Message Recieved");
                         Console.WriteLine(Encoding.UTF8.GetString(buffer,0,result.Count));
-                        await RouteJSONMessageAsync(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                        var msg = await RouteJSONMessageAsync(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                        await SendConnectedAsync(websocket, msg);
                         return;
                     }
                     else if (result.MessageType == WebSocketMessageType.Close)
@@ -62,6 +67,18 @@ namespace WebSocketServer.Middleware
         private async Task SendConnIdAsync(WebSocket socket, string connId)
         {
             var buffer = Encoding.UTF8.GetBytes(connId);
+            await socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+        }
+
+        private async Task SendConnectedAsync(WebSocket socket,string msg)
+        {
+            var buffer = Encoding.UTF8.GetBytes(msg);
+            await socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
+        }
+
+        private async Task SendNewGameAsync(WebSocket socket)
+        {
+            var buffer = Encoding.UTF8.GetBytes(Message.NewGame);
             await socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
         }
 
@@ -100,9 +117,14 @@ namespace WebSocketServer.Middleware
 
         }
 
-        public async Task RouteJSONMessageAsync(string message)
+        public async Task<string> RouteJSONMessageAsync(string message)
         {
             var route = JsonConvert.DeserializeObject<dynamic>(message);
+
+            if(route.Message == "NewGame")
+            {
+                return Message.NewGame;
+            }
 
             var x = route.GamePos;
 
@@ -116,6 +138,8 @@ namespace WebSocketServer.Middleware
                 }
                 Console.WriteLine("");
             }
+
+            return "";
         }
 
     }
